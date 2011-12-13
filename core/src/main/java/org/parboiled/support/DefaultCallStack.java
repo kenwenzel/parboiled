@@ -17,6 +17,10 @@ public class DefaultCallStack implements CallStack {
 
     protected Frame currentFrame;
     protected Object[] nextArguments;
+    
+    public DefaultCallStack() {
+		pushFrame(0);
+	}
 
     @Override
     public Object[] getArguments() {
