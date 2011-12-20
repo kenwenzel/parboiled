@@ -37,6 +37,7 @@ public class VarInitClassGeneratorTest extends TransformationTest {
             new InstructionGraphCreator(),
             new ImplicitActionsConverter(),
             new InstructionGroupCreator(),
+            new ActionVariablesAnalyzer(),
             new InstructionGroupPreparer(),
             new ActionClassGenerator(true),
             new VarInitClassGenerator(true)

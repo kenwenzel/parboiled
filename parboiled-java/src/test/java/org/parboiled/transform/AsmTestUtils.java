@@ -16,24 +16,25 @@
 
 package org.parboiled.transform;
 
-import static org.parboiled.common.Preconditions.*;
-import org.objectweb.asm.ClassAdapter;
+import static org.parboiled.common.Preconditions.checkArgNotNull;
+import static org.testng.Assert.assertEquals;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
+
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.MethodAdapter;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.SimpleVerifier;
 import org.objectweb.asm.util.CheckMethodAdapter;
+import org.objectweb.asm.util.Textifier;
 import org.objectweb.asm.util.TraceClassVisitor;
 import org.objectweb.asm.util.TraceMethodVisitor;
 import org.parboiled.common.StringUtils;
-
-import java.io.PrintWriter;
-import java.io.StringWriter;
-
-import static org.testng.Assert.assertEquals;
 
 public class AsmTestUtils {
 
@@ -41,7 +42,7 @@ public class AsmTestUtils {
         StringWriter stringWriter = new StringWriter();
         PrintWriter printWriter = new PrintWriter(stringWriter);
         TraceClassVisitor traceClassVisitor = new TraceClassVisitor(printWriter);
-        ClassAdapter checkClassAdapter = new ClassAdapter(traceClassVisitor);
+        ClassVisitor checkClassAdapter = traceClassVisitor;
         //ClassAdapter checkClassAdapter = new CheckClassAdapter(traceClassVisitor);
         ClassReader classReader;
         classReader = new ClassReader(code);
@@ -52,11 +53,11 @@ public class AsmTestUtils {
 
     public static String getMethodInstructionList(MethodNode methodNode) {
         checkArgNotNull(methodNode, "methodNode");
-        TraceMethodVisitor traceMethodVisitor = new NonMaxTraceVisitor();
+        TraceMethodVisitor traceMethodVisitor = new TraceMethodVisitor(new NonMaxTextifier());
         methodNode.accept(traceMethodVisitor);
         StringWriter stringWriter = new StringWriter();
         PrintWriter printWriter = new PrintWriter(stringWriter);
-        traceMethodVisitor.print(printWriter);
+        traceMethodVisitor.p.print(printWriter);
         printWriter.flush();
         String[] lines = stringWriter.toString().split("\n");
         int lineNr = 0;
@@ -74,13 +75,13 @@ public class AsmTestUtils {
 
     public static void assertTraceDumpEquality(MethodNode method, String traceDump) throws Exception {
         checkArgNotNull(method, "method");
-        TraceMethodVisitor traceMethodVisitor = new NonMaxTraceVisitor();
+        TraceMethodVisitor traceMethodVisitor = new TraceMethodVisitor(new NonMaxTextifier());
         // MethodAdapter checkMethodAdapter = new MethodAdapter(traceMethodVisitor);
-        MethodAdapter checkMethodAdapter = new CheckMethodAdapter(traceMethodVisitor);
+        MethodVisitor checkMethodAdapter = new CheckMethodAdapter(traceMethodVisitor);
         method.accept(checkMethodAdapter);
         StringWriter stringWriter = new StringWriter();
         PrintWriter printWriter = new PrintWriter(stringWriter);
-        traceMethodVisitor.print(printWriter);
+        traceMethodVisitor.p.print(printWriter);
         printWriter.flush();
 
         assertEquals(stringWriter.toString(), traceDump);
@@ -106,7 +107,7 @@ public class AsmTestUtils {
         }
     }
 
-    private static class NonMaxTraceVisitor extends TraceMethodVisitor {
+    private static class NonMaxTextifier extends Textifier {
         @Override
         public void visitMaxs(int maxStack, int maxLocals) {
             // don't include max values

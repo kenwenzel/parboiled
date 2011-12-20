@@ -191,7 +191,7 @@ class RuleMethod extends MethodNode {
     	return setGraphNode(insn, resultValue, predecessors);
     }
 
-    public InstructionGraphNode setGraphNode(AbstractInsnNode insn, BasicValue resultValue, List<Value> predecessors) {
+    public InstructionGraphNode setGraphNode(AbstractInsnNode insn, BasicValue resultValue, List<? extends Value> predecessors) {
         if (graphNodes == null) {
             // initialize with a list of null values
             graphNodes = new ArrayList<InstructionGraphNode>(

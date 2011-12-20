@@ -45,7 +45,7 @@ class RuleMethodInterpreter extends BasicInterpreter {
     }
 
     @Override
-    public Value newValue(Type type) {
+    public BasicValue newValue(Type type) {
         BasicValue basicValue = (BasicValue) super.newValue(type);
         if (basicValue == BasicValue.REFERENCE_VALUE) {
             basicValue = new BasicValue(type); // record the exact type and not just "Ljava/lang/Object"
@@ -54,14 +54,14 @@ class RuleMethodInterpreter extends BasicInterpreter {
     }
 
     @Override
-    public Value newOperation(AbstractInsnNode insn) throws AnalyzerException {
+    public BasicValue newOperation(AbstractInsnNode insn) throws AnalyzerException {
         return createNode(insn, super.newOperation(insn));
     }
 
 	@Override
-	public Value copyOperation(AbstractInsnNode insn, Value value)
+	public BasicValue copyOperation(AbstractInsnNode insn, BasicValue value)
 			throws AnalyzerException {
-		Value node = createNode(insn, super.copyOperation(insn, value), value);
+		BasicValue node = createNode(insn, super.copyOperation(insn, value), value);
 
 		// xSTORE instructions decouple different sets of action instructions
 		if (insn.getType() == AbstractInsnNode.VAR_INSN
@@ -73,17 +73,17 @@ class RuleMethodInterpreter extends BasicInterpreter {
 	}
 
     @Override
-    public Value unaryOperation(AbstractInsnNode insn, Value value) throws AnalyzerException {
+    public BasicValue unaryOperation(AbstractInsnNode insn, BasicValue value) throws AnalyzerException {
         return createNode(insn, super.unaryOperation(insn, null), value);
     }
 
     @Override
-    public Value binaryOperation(AbstractInsnNode insn, Value value1, Value value2) throws AnalyzerException {
+    public BasicValue binaryOperation(AbstractInsnNode insn, BasicValue value1, BasicValue value2) throws AnalyzerException {
         return createNode(insn, super.binaryOperation(insn, null, null), value1, value2);
     }
 
     @Override
-    public Value ternaryOperation(AbstractInsnNode insn, Value v1, Value v2, Value v3) throws AnalyzerException {
+    public BasicValue ternaryOperation(AbstractInsnNode insn, BasicValue v1, BasicValue v2, BasicValue v3) throws AnalyzerException {
         // this method is only called for xASTORE instructions, parameter v1 is the value corresponding to the
         // NEWARRAY, ANEWARRAY or MULTIANEWARRAY instruction having created the array, we need to insert a special
         // dependency edge from the array creator to this xSTORE instruction
@@ -93,12 +93,12 @@ class RuleMethodInterpreter extends BasicInterpreter {
 
     @Override
     @SuppressWarnings({"unchecked"})
-    public Value naryOperation(AbstractInsnNode insn, List values) throws AnalyzerException {
-        return createNode(insn, super.naryOperation(insn, null), (Value[]) values.toArray(new Value[values.size()]));
+    public BasicValue naryOperation(AbstractInsnNode insn, List values) throws AnalyzerException {
+        return createNode(insn, super.naryOperation(insn, null), (BasicValue[]) values.toArray(new BasicValue[values.size()]));
     }
 
     @Override
-    public void returnOperation(AbstractInsnNode insn, Value value, Value expected) throws AnalyzerException {
+    public void returnOperation(AbstractInsnNode insn, BasicValue value, BasicValue expected) throws AnalyzerException {
         checkState(insn.getOpcode() == ARETURN);
         checkState(unwrap(value).getType().equals(Types.RULE));
         checkState(unwrap(expected).getType().equals(Types.RULE));
@@ -106,12 +106,12 @@ class RuleMethodInterpreter extends BasicInterpreter {
         method.setReturnInstructionNode(createNode(insn, null, value));
     }
 
-    private InstructionGraphNode createNode(AbstractInsnNode insn, Value resultValue, Value... prevNodes) {
+    private InstructionGraphNode createNode(AbstractInsnNode insn, BasicValue resultValue, BasicValue... prevNodes) {
         return method.setGraphNode(insn, unwrap(resultValue), Arrays.asList(prevNodes));
     }
 
     @Override
-    public Value merge(Value v, Value w) {
+    public BasicValue merge(BasicValue v, BasicValue w) {
         // we don't actually merge values but use the control flow detection to deal with conditionals
         return v;
     }
@@ -154,10 +154,10 @@ class RuleMethodInterpreter extends BasicInterpreter {
         return method.getGraphNodes().get(method.instructions.indexOf(insn));
     }
 
-    private BasicValue unwrap(Value resultValue) {
-        return resultValue == null || resultValue instanceof BasicValue ?
-                (BasicValue) resultValue : ((InstructionGraphNode) resultValue).getResultValue();
-    }
+	private BasicValue unwrap(Value resultValue) {
+		return resultValue instanceof InstructionGraphNode ? ((InstructionGraphNode) resultValue)
+				.getResultValue() : (BasicValue) resultValue;
+	}
 
     private class Edge {
         public final AbstractInsnNode from;

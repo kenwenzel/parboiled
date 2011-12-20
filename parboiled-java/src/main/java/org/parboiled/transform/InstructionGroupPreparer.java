@@ -19,14 +19,19 @@ package org.parboiled.transform;
 import static org.objectweb.asm.Opcodes.*;
 import static org.parboiled.common.Preconditions.*;
 
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.VarInsnNode;
 import org.parboiled.common.Base64;
 import org.parboiled.common.StringUtils;
+
+import com.sun.org.apache.xpath.internal.compiler.OpCodes;
 
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
@@ -116,8 +121,8 @@ class InstructionGroupPreparer implements RuleMethodProcessor {
     private synchronized void name(InstructionGroup group, ParserClassNode classNode) {
         // generate an MD5 hash across the buffer, use only the first 96 bit
         MD5Digester digester = new MD5Digester(classNode.name, group.getRuleMethod());
-        group.getInstructions().accept(digester);
-        for (FieldNode field: group.getFields()) field.accept(digester);
+        group.getInstructions().accept(digester.methodVisitor);
+        for (FieldNode field: group.getFields()) field.accept(digester.classVisitor);
         byte[] hash = digester.getMD5Hash();
         byte[] hash96 = new byte[12];
         System.arraycopy(hash, 0, hash96, 0, 12);
@@ -128,13 +133,149 @@ class InstructionGroupPreparer implements RuleMethodProcessor {
         group.setName(name);
     }
 
-    private static class MD5Digester extends EmptyVisitor {
+    private static class MD5Digester {
         private static MessageDigest digest;
         private static ByteBuffer buffer;
         private final List<Label> labels = new ArrayList<Label>();
         private final String parserClassName;
         private final RuleMethod ruleMethod;
 
+        final MethodVisitor methodVisitor = new MethodVisitor(Opcodes.ASM4) {
+		    @Override
+		    public void visitInsn(int opcode) {
+		        update(opcode);
+		    }
+		
+		    @Override
+		    public void visitIntInsn(int opcode, int operand) {
+		        update(opcode);
+		        update(operand);
+		    }
+		
+		    @Override
+		    public void visitVarInsn(int opcode, int var) {
+		        update(opcode);
+		        update(var);
+		        
+				// ensure that two actions with same number of action variables are
+				// named different if variable types differ
+				if (0 <= var && var < ruleMethod.getActionVariableTypes().size()) {
+					Type varType = ruleMethod.getActionVariableTypes().get(var);
+					if (varType != null) {
+						update(varType.getDescriptor());
+					}
+				}
+		        
+		        if (opcode == ALOAD && var == 0) {
+		            // make sure the names of identical actions differ if they are defined in different parent classes
+		            update(parserClassName);
+		        }
+		    }
+		
+		    @Override
+		    public void visitTypeInsn(int opcode, String type) {
+		        update(opcode);
+		        update(type);
+		    }
+		
+		    @Override
+		    public void visitFieldInsn(int opcode, String owner, String name, String desc) {
+		        update(opcode);
+		        update(owner);
+		        update(name);
+		        update(desc);
+		    }
+		
+		    @Override
+		    public void visitMethodInsn(int opcode, String owner, String name, String desc) {
+		        update(opcode);
+		        update(owner);
+		        update(name);
+		        update(desc);
+		    }
+		
+		    @Override
+		    public void visitJumpInsn(int opcode, Label label) {
+		        update(opcode);
+		        update(label);
+		    }
+		
+		    @Override
+		    public void visitLabel(Label label) {
+		        update(label);
+		    }
+		
+		    @Override
+		    public void visitLdcInsn(Object cst) {
+		        if (cst instanceof String) {
+		            update((String) cst);
+		        } else if (cst instanceof Integer) {
+		            update((Integer) cst);
+		        } else if (cst instanceof Float) {
+		            ensureRemaining(4);
+		            buffer.putFloat((Float) cst);
+		        } else if (cst instanceof Long) {
+		            ensureRemaining(8);
+		            buffer.putLong((Long) cst);
+		        } else if (cst instanceof Double) {
+		            ensureRemaining(8);
+		            buffer.putDouble((Double) cst);
+		        } else {
+		            checkState(cst instanceof Type);
+		            update(((Type) cst).getInternalName());
+		        }
+		    }
+		
+		    @Override
+		    public void visitIincInsn(int var, int increment) {
+		        update(var);
+		        update(increment);
+		    }
+		
+		    @Override
+		    public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
+		        update(min);
+		        update(max);
+		        update(dflt);
+		        for (Label label : labels) {
+		            update(label);
+		        }
+		    }
+		
+		    @Override
+		    public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
+		        update(dflt);
+		        for (int i = 0; i < keys.length; i++) {
+		            update(keys[i]);
+		            update(labels[i]);
+		        }
+		    }
+		
+		    @Override
+		    public void visitMultiANewArrayInsn(String desc, int dims) {
+		        update(desc);
+		        update(dims);
+		    }
+		
+		    @Override
+		    public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
+		        update(start);
+		        update(end);
+		        update(handler);
+		        update(type);
+		    }
+    	};
+        
+        final ClassVisitor classVisitor = new ClassVisitor(Opcodes.ASM4) {
+	        @Override
+	        public FieldVisitor visitField(int access, String name, String desc, String signature, Object value) {
+	            update(name);
+	            update(desc);
+	            update(signature);
+	            return null;
+	        }
+    	};
+        
         public MD5Digester(String parserClassName, RuleMethod ruleMethod) {
             this.parserClassName = parserClassName;
             this.ruleMethod = ruleMethod;
@@ -149,138 +290,6 @@ class InstructionGroupPreparer implements RuleMethodProcessor {
                 buffer = ByteBuffer.allocateDirect(4096);
             }
             buffer.clear();
-        }
-
-        @Override
-        public void visitInsn(int opcode) {
-            update(opcode);
-        }
-
-        @Override
-        public void visitIntInsn(int opcode, int operand) {
-            update(opcode);
-            update(operand);
-        }
-
-        @Override
-        public void visitVarInsn(int opcode, int var) {
-            update(opcode);
-            update(var);
-            
-			// ensure that two actions with same number of action variables are
-			// named different if variable types differ
-			if (0 <= var && var < ruleMethod.getActionVariableTypes().size()) {
-				Type varType = ruleMethod.getActionVariableTypes().get(var);
-				if (varType != null) {
-					update(varType.getDescriptor());
-				}
-			}
-            
-            if (opcode == ALOAD && var == 0) {
-                // make sure the names of identical actions differ if they are defined in different parent classes
-                update(parserClassName);
-            }
-        }
-
-        @Override
-        public void visitTypeInsn(int opcode, String type) {
-            update(opcode);
-            update(type);
-        }
-
-        @Override
-        public void visitFieldInsn(int opcode, String owner, String name, String desc) {
-            update(opcode);
-            update(owner);
-            update(name);
-            update(desc);
-        }
-
-        @Override
-        public void visitMethodInsn(int opcode, String owner, String name, String desc) {
-            update(opcode);
-            update(owner);
-            update(name);
-            update(desc);
-        }
-
-        @Override
-        public void visitJumpInsn(int opcode, Label label) {
-            update(opcode);
-            update(label);
-        }
-
-        @Override
-        public void visitLabel(Label label) {
-            update(label);
-        }
-
-        @Override
-        public void visitLdcInsn(Object cst) {
-            if (cst instanceof String) {
-                update((String) cst);
-            } else if (cst instanceof Integer) {
-                update((Integer) cst);
-            } else if (cst instanceof Float) {
-                ensureRemaining(4);
-                buffer.putFloat((Float) cst);
-            } else if (cst instanceof Long) {
-                ensureRemaining(8);
-                buffer.putLong((Long) cst);
-            } else if (cst instanceof Double) {
-                ensureRemaining(8);
-                buffer.putDouble((Double) cst);
-            } else {
-                checkState(cst instanceof Type);
-                update(((Type) cst).getInternalName());
-            }
-        }
-
-        @Override
-        public void visitIincInsn(int var, int increment) {
-            update(var);
-            update(increment);
-        }
-
-        @Override
-        public void visitTableSwitchInsn(int min, int max, Label dflt, Label[] labels) {
-            update(min);
-            update(max);
-            update(dflt);
-            for (Label label : labels) {
-                update(label);
-            }
-        }
-
-        @Override
-        public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
-            update(dflt);
-            for (int i = 0; i < keys.length; i++) {
-                update(keys[i]);
-                update(labels[i]);
-            }
-        }
-
-        @Override
-        public void visitMultiANewArrayInsn(String desc, int dims) {
-            update(desc);
-            update(dims);
-        }
-
-        @Override
-        public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
-            update(start);
-            update(end);
-            update(handler);
-            update(type);
-        }
-
-        @Override
-        public FieldVisitor visitField(int access, String name, String desc, String signature, Object value) {
-            update(name);
-            update(desc);
-            update(signature);
-            return this;
         }
 
         private void update(int i) {

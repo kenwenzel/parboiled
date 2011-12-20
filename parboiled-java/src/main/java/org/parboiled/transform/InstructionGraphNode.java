@@ -22,22 +22,27 @@
 
 package org.parboiled.transform;
 
-import static org.objectweb.asm.Opcodes.*;
-import static org.parboiled.common.Preconditions.*;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.analysis.BasicValue;
-import org.objectweb.asm.tree.analysis.Value;
-import org.objectweb.asm.util.AbstractVisitor;
+import static org.objectweb.asm.Opcodes.IALOAD;
+import static org.objectweb.asm.Opcodes.IASTORE;
+import static org.objectweb.asm.Opcodes.ILOAD;
+import static org.objectweb.asm.Opcodes.INVOKESTATIC;
+import static org.objectweb.asm.Opcodes.ISTORE;
+import static org.parboiled.common.Preconditions.checkArgNotNull;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.analysis.BasicValue;
+import org.objectweb.asm.tree.analysis.Value;
+import org.objectweb.asm.util.Printer;
+
 /**
  * A node in the instruction dependency graph.
  */
-class InstructionGraphNode implements Value {
+class InstructionGraphNode extends BasicValue {
 
     private AbstractInsnNode instruction;
     private final BasicValue resultValue;
@@ -53,6 +58,7 @@ class InstructionGraphNode implements Value {
     private InstructionGroup group;
 
     public InstructionGraphNode(AbstractInsnNode instruction, BasicValue resultValue) {
+    	super(resultValue == null ? null : resultValue.getType());
         this.instruction = instruction;
         this.resultValue = resultValue;
         this.isActionRoot = AsmUtils.isActionRoot(instruction);
@@ -143,7 +149,7 @@ class InstructionGraphNode implements Value {
         return isXStore;
     }
 
-    public void addPredecessors(Collection<Value> preds) {
+    public void addPredecessors(Collection<? extends Value> preds) {
         checkArgNotNull(preds, "preds");
         for (Value pred : preds) {
             if (pred instanceof InstructionGraphNode) {
@@ -180,7 +186,16 @@ class InstructionGraphNode implements Value {
 	
     @Override
     public String toString() {
-        return instruction.getOpcode() != -1 ? AbstractVisitor.OPCODES[instruction.getOpcode()] : super.toString();
+        return instruction.getOpcode() != -1 ? Printer.OPCODES[instruction.getOpcode()] : super.toString();
     }
 
+    @Override
+    public boolean equals(Object value) {
+    	return value == this;
+    }
+    
+    @Override
+    public int hashCode() {
+    	return System.identityHashCode(this);
+    }
 }
