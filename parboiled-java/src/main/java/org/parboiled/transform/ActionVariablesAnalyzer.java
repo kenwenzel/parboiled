@@ -30,6 +30,7 @@ public class ActionVariablesAnalyzer implements RuleMethodProcessor, Opcodes, Ty
 		List<Type> variableTypes = new ArrayList<Type>();
 
 		SimpleVerifier typeMerger = new SimpleVerifier();
+		typeMerger.setClassLoader(method.getOwnerClass().getClassLoader());
         for (InstructionGroup group : method.getGroups()) {
             for (InstructionGraphNode node : group.getNodes()) {
                 AbstractInsnNode insn = node.getInstruction();
